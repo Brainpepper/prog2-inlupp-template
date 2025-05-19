@@ -1,0 +1,36 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build and Run JavaFX",
+            "type": "shell",
+            "command": "${env:COMSPEC}",
+            "args": [
+                "/c",
+                "mvn clean package -Dmaven.test.skip"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "windows": {
+                "command": "cmd"
+            },
+            "linux": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "mvn clean package -Dmaven.test.skip"
+                ]
+            },
+            "osx": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "mvn clean package -Dmaven.test.skip"
+                ]
+            }
+        }
+    ]
+}
