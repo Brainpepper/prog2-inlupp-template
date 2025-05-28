@@ -266,11 +266,6 @@ public class Gui extends Application {
   }
 
   private void handleSaveItem() {
-    // Kontrollera osparade ändringar först
-    if (!checkUnsavedChanges()) {
-      return;
-    }
-
     // Kontrollera att det finns en karta att spara
     if (currentMapImagePath == null) {
       showAlert("Fel", "Ingen karta att spara. Ladda först en karta med 'New Map' eller 'Open'.");
