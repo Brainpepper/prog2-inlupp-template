@@ -11,7 +11,8 @@ import javafx.scene.image.ImageView;
 //import javafx.scene.control.Label;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
-
+import java.io.PrintWriter;
+import java.io.FileWriter;
 import java.io.File;
 import java.util.Optional;
 
@@ -67,6 +68,7 @@ public class Gui extends Application {
     exitItem.setOnAction(e -> handleExit());
     newMapItem.setOnAction(e -> handleNewMapItem());
     openItem.setOnAction(e -> handleOpenItem());
+    saveItem.setOnAction(e -> handleSaveItem());
 
     // Hantera fönsterstängning
     stage.setOnCloseRequest(e -> {
@@ -252,6 +254,75 @@ public class Gui extends Application {
 
       } catch (Exception ex) {
         showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
+        ex.printStackTrace();
+      }
+    }
+  }
+
+  private void handleSaveItem() {
+    // Kontrollera osparade ändringar först
+    if (!checkUnsavedChanges()) {
+      return;
+    }
+
+    // Kontrollera att det finns en karta att spara
+    if (currentMapImagePath == null) {
+      showAlert("Fel", "Ingen karta att spara. Ladda först en karta med 'New Map' eller 'Open'.");
+      return;
+    }
+
+    FileChooser fileChooser = new FileChooser();
+    fileChooser.getExtensionFilters().add(
+        new FileChooser.ExtensionFilter("Graf-filer", "*.graph"));
+    File file = fileChooser.showSaveDialog(primaryStage);
+
+    if (file != null) {
+      try {
+        // Se till att filen har rätt ändelse
+        String fileName = file.getAbsolutePath();
+        if (!fileName.endsWith(".graph")) {
+          file = new File(fileName + ".graph");
+        }
+
+        try (PrintWriter writer = new PrintWriter(new FileWriter(file, java.nio.charset.StandardCharsets.UTF_8))) {
+          // 1. Första raden: sökväg till bildfilen
+          writer.println(currentMapImagePath);
+
+          // 2. Andra raden: alla noder (semikolonseparerade)
+          StringBuilder nodesLine = new StringBuilder();
+          boolean firstNode = true;
+          for (String nodeName : graph.getNodes()) {
+            if (!firstNode) {
+              nodesLine.append(";");
+            }
+
+            // TODO: Hämta faktiska koordinater från visuella noder
+            // För nu används dummy-koordinater
+            double x = 0.0; // Ska hämtas från PlaceNode
+            double y = 0.0; // Ska hämtas från PlaceNode
+
+            nodesLine.append(nodeName).append(";").append(x).append(";").append(y);
+            firstNode = false;
+          }
+          writer.println(nodesLine.toString());
+
+          // 3. Resterande rader: alla förbindelser (en per rad)
+          for (String fromNode : graph.getNodes()) {
+            for (Edge<String> edge : graph.getEdgesFrom(fromNode)) {
+              String toNode = edge.getDestination();
+              String edgeName = edge.getName();
+              int weight = edge.getWeight();
+
+              writer.println(fromNode + ";" + toNode + ";" + edgeName + ";" + weight);
+            }
+          }
+        }
+
+        hasUnsavedChanges = false;
+        System.out.println("Graf sparad: " + file.getName());
+
+      } catch (Exception ex) {
+        showAlert("Fel", "Kunde inte spara graf-filen: " + ex.getMessage());
         ex.printStackTrace();
       }
     }
