@@ -13,6 +13,7 @@ import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 
 import java.io.File;
+import java.util.Optional;
 
 public class Gui extends Application {
 
@@ -20,6 +21,8 @@ public class Gui extends Application {
   private ImageView mapView;
   private Pane mapPane;
   private Stage primaryStage;
+  private boolean hasUnsavedChanges = false;
+  private String currentMapImagePath = null;
 
   @Override
   public void start(Stage stage) {
@@ -60,14 +63,24 @@ public class Gui extends Application {
     stage.setScene(scene);
     stage.show();
 
-    // Funktion för menyval "Exit"
-    exitItem.setOnAction(e -> stage.close());
+    // Event handlers
+    exitItem.setOnAction(e -> handleExit());
+    newMapItem.setOnAction(e -> handleNewMapItem());
+    openItem.setOnAction(e -> handleOpenItem());
 
-    // Funktion för menyval "New Map"
-    newMapItem.setOnAction(e -> loadNewMap());
+    // Hantera fönsterstängning
+    stage.setOnCloseRequest(e -> {
+      e.consume();
+      handleExit();
+    });
   }
 
-  private void loadNewMap() {
+  private void handleNewMapItem() {
+    // Kontrollera osparade ändringar först
+    if (!checkUnsavedChanges()) {
+      return;
+    }
+
     FileChooser fileChooser = new FileChooser();
     fileChooser.setTitle("Välj en kartbild");
     fileChooser.getExtensionFilters().add(
@@ -76,43 +89,42 @@ public class Gui extends Application {
 
     if (file != null) {
       try {
-        // 1. Rensa gamla noder/graf
+        // Rensa gamla noder/graf
         graph = new ListGraph<>();
 
-        // 2. Ladda ny bild
+        // Ladda ny bild
         Image newImage = new Image(file.toURI().toString());
 
-        // 3. Kontrollera att bilden laddades korrekt
+        // Kontrollera att bilden laddades korrekt
         if (newImage.isError()) {
           showAlert("Fel", "Kunde inte ladda bilden. Kontrollera att filen är en giltig bildfil.");
           return;
         }
 
-        // 4. Sätt bilden i sin naturliga storlek (ingen skalning)
+        // Sätt bilden
         mapView.setImage(newImage);
         mapView.setPreserveRatio(true);
 
-        // 5. Sätt mapPane att vara minst lika stor som bilden, men kan bli större
+        // Anpassa mapPane
         mapPane.setMinSize(newImage.getWidth(), newImage.getHeight());
         mapPane.setPrefSize(newImage.getWidth(), newImage.getHeight());
 
-        // 6. Rensa eventuella tidigare platser från kartan
+        // Rensa kartan och lägg till bilden
         mapPane.getChildren().clear();
         mapPane.getChildren().add(mapView);
 
-        // 7. Anpassa fönstrets storlek till bilden + meny/toolbar
-        double menuHeight = 60; // Ungefärlig höjd för meny + toolbar
-        double windowWidth = Math.max(newImage.getWidth(), 400); // Minsta bredd 400px
+        // Anpassa fönsterstorlek
+        double menuHeight = 60;
+        double windowWidth = Math.max(newImage.getWidth(), 400);
         double windowHeight = newImage.getHeight() + menuHeight;
-
-        // 8. Sätt fönstrets storlek men låt det vara skalbart
         primaryStage.setWidth(windowWidth);
         primaryStage.setHeight(windowHeight);
 
+        // Spara sökväg och markera som sparat
+        currentMapImagePath = file.getAbsolutePath();
+        hasUnsavedChanges = false;
+
         System.out.println("Ny karta inläst: " + file.getName());
-        System.out.println("Bildstorlek: " + newImage.getWidth() + "x" + newImage.getHeight());
-        System.out.println("Fönsterstorlek: " + windowWidth + "x" + windowHeight);
-        System.out.println("Antal noder nu (bör vara 0): " + graph.getNodes().size());
 
       } catch (Exception ex) {
         showAlert("Fel", "Ett fel uppstod när bilden skulle laddas: " + ex.getMessage());
@@ -121,12 +133,168 @@ public class Gui extends Application {
     }
   }
 
+  private void handleOpenItem() {
+    // Kontrollera osparade ändringar först
+    if (!checkUnsavedChanges()) {
+      return;
+    }
+
+    FileChooser fileChooser = new FileChooser();
+    fileChooser.setTitle("Öppna graf-fil");
+    fileChooser.getExtensionFilters().add(
+        new FileChooser.ExtensionFilter("Graf-filer", "*.graph"));
+    File file = fileChooser.showOpenDialog(primaryStage);
+
+    if (file != null) {
+      try {
+        // Rensa gamla noder/graf
+        graph = new ListGraph<>();
+
+        try (java.util.Scanner scanner = new java.util.Scanner(file, "UTF-8")) {
+          // Läs första raden - sökväg till bildfil
+          if (!scanner.hasNextLine()) {
+            throw new Exception("Tom fil eller fel format");
+          }
+
+          String imagePath = scanner.nextLine().trim();
+
+          // Hantera både URI-format (file:namn.gif) och vanliga filnamn (namn.gif)
+          String actualImagePath = imagePath;
+          if (imagePath.startsWith("file:")) {
+            actualImagePath = imagePath.substring(5); // Ta bort "file:" prefix
+          }
+
+          // Hitta bildfilen
+          File imageFile = new File(actualImagePath);
+          if (!imageFile.exists()) {
+            // Prova relativ sökväg från graf-filens katalog
+            imageFile = new File(file.getParent(), actualImagePath);
+            if (!imageFile.exists()) {
+              throw new Exception("Bildfilen hittades inte: " + actualImagePath);
+            }
+          }
+
+          // Ladda bakgrundsbilden
+          Image newImage = new Image(imageFile.toURI().toString());
+          if (newImage.isError()) {
+            throw new Exception("Kunde inte ladda bildfilen: " + imageFile.getName());
+          }
+
+          // Sätt bilden
+          mapView.setImage(newImage);
+          mapView.setPreserveRatio(true);
+
+          // Anpassa mapPane
+          mapPane.setMinSize(newImage.getWidth(), newImage.getHeight());
+          mapPane.setPrefSize(newImage.getWidth(), newImage.getHeight());
+
+          // Rensa kartan och lägg till bilden
+          mapPane.getChildren().clear();
+          mapPane.getChildren().add(mapView);
+
+          // Anpassa fönsterstorlek
+          double menuHeight = 60;
+          double windowWidth = Math.max(newImage.getWidth(), 400);
+          double windowHeight = newImage.getHeight() + menuHeight;
+          primaryStage.setWidth(windowWidth);
+          primaryStage.setHeight(windowHeight);
+
+          currentMapImagePath = imageFile.getAbsolutePath();
+
+          // Läs noder och edges
+          while (scanner.hasNextLine()) {
+            String line = scanner.nextLine().trim();
+            if (line.isEmpty())
+              continue;
+
+            if (line.startsWith("Node:")) {
+              // Format: Node: namn;x;y
+              String nodeData = line.substring(5).trim();
+              String[] parts = nodeData.split(";");
+              if (parts.length != 3) {
+                throw new Exception("Felaktigt nodformat: " + line);
+              }
+
+              String nodeName = parts[0];
+              double x = Double.parseDouble(parts[1]);
+              double y = Double.parseDouble(parts[2]);
+
+              // Lägg till nod i grafen
+              graph.add(nodeName);
+
+              // TODO: Skapa visuell representation av noden
+              // addVisualNode(nodeName, x, y);
+
+            } else if (line.startsWith("Edge:")) {
+              // Format: Edge: från;till;namn;vikt
+              String edgeData = line.substring(5).trim();
+              String[] parts = edgeData.split(";");
+              if (parts.length != 4) {
+                throw new Exception("Felaktigt edge-format: " + line);
+              }
+
+              String from = parts[0];
+              String to = parts[1];
+              String name = parts[2];
+              int weight = Integer.parseInt(parts[3]);
+
+              // Lägg till edge i grafen
+              graph.connect(from, to, name, weight);
+
+              // TODO: Skapa visuell representation av edge
+              // addVisualEdge(from, to, name, weight);
+            }
+          }
+        }
+
+        hasUnsavedChanges = false;
+        System.out.println("Graf-fil öppnad: " + file.getName());
+
+      } catch (Exception ex) {
+        showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
+        ex.printStackTrace();
+      }
+    }
+  }
+
+  private void handleExit() {
+    if (checkUnsavedChanges()) {
+      primaryStage.close();
+    }
+  }
+
+  private boolean checkUnsavedChanges() {
+    if (hasUnsavedChanges) {
+      Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+      alert.setTitle("Warning!");
+      alert.setHeaderText(null);
+      alert.setContentText("Unsaved changes, continue anyway?");
+
+      ButtonType okButton = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+      ButtonType cancelButton = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+      alert.getButtonTypes().setAll(okButton, cancelButton);
+
+      Optional<ButtonType> result = alert.showAndWait();
+      return result.isPresent() && result.get() == okButton;
+    }
+    return true;
+  }
+
   private void showAlert(String title, String message) {
     Alert alert = new Alert(Alert.AlertType.ERROR);
     alert.setTitle(title);
     alert.setHeaderText(null);
     alert.setContentText(message);
     alert.showAndWait();
+  }
+
+  // Metoder för att markera osparade ändringar
+  public void markUnsavedChanges() {
+    hasUnsavedChanges = true;
+  }
+
+  public void markSaved() {
+    hasUnsavedChanges = false;
   }
 
   public static void main(String[] args) {
