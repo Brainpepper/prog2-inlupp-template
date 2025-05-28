@@ -15,6 +15,11 @@ import java.io.PrintWriter;
 import java.io.FileWriter;
 import java.io.File;
 import java.util.Optional;
+import javafx.scene.SnapshotParameters;
+import javafx.scene.image.WritableImage;
+import javafx.embed.swing.SwingFXUtils;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 
 public class Gui extends Application {
 
@@ -69,6 +74,7 @@ public class Gui extends Application {
     newMapItem.setOnAction(e -> handleNewMapItem());
     openItem.setOnAction(e -> handleOpenItem());
     saveItem.setOnAction(e -> handleSaveItem());
+    saveImageItem.setOnAction(e -> handleSaveImageItem());
 
     // Hantera fönsterstängning
     stage.setOnCloseRequest(e -> {
@@ -325,6 +331,26 @@ public class Gui extends Application {
         showAlert("Fel", "Kunde inte spara graf-filen: " + ex.getMessage());
         ex.printStackTrace();
       }
+    }
+  }
+
+  private void handleSaveImageItem() {
+    try {
+      // Ta en snapshot av mapPane (kartområdet)
+      WritableImage writableImage = mapPane.snapshot(new SnapshotParameters(), null);
+
+      // Konvertera till BufferedImage
+      BufferedImage bufferedImage = SwingFXUtils.fromFXImage(writableImage, null);
+
+      // Spara som PNG i projektmappen
+      File outputFile = new File("capture.png");
+      ImageIO.write(bufferedImage, "png", outputFile);
+
+      System.out.println("Skärmbild sparad som: " + outputFile.getAbsolutePath());
+
+    } catch (Exception ex) {
+      showAlert("Fel", "Kunde inte spara skärmbilden: " + ex.getMessage());
+      ex.printStackTrace();
     }
   }
 
