@@ -18,6 +18,7 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
+import javafx.scene.Node;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -26,9 +27,10 @@ import javafx.scene.shape.Circle;
 import javafx.scene.paint.Color;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.shape.Line;
-import javafx.util.Pair;
 import java.util.List;
+import java.util.Map;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 class PlaceNode extends StackPane {
   private final String name;
@@ -84,13 +86,14 @@ public class Gui extends Application {
   private boolean hasUnsavedChanges = false;
   private String currentMapImagePath = null;
   private static List<PlaceNode> selectedNodes = new ArrayList<>();
+  private Button newPlaceBtn; // gör knappen tillgänglig för andra metoder i Gui
 
   @Override
   public void start(Stage stage) {
     this.primaryStage = stage;
     stage.setTitle("Karta med graf");
 
-    // File-meny
+    // fil meny
     MenuBar menuBar = new MenuBar();
     Menu fileMenu = new Menu("File");
     MenuItem newMapItem = new MenuItem("New Map");
@@ -102,19 +105,20 @@ public class Gui extends Application {
     fileMenu.getItems().addAll(newMapItem, openItem, saveItem, saveImageItem, new SeparatorMenuItem(), exitItem);
     menuBar.getMenus().add(fileMenu);
 
+    // toolbar
     Button findPathBtn = new Button("Find Path");
     Button showConnBtn = new Button("Show Connection");
-    Button newPlaceBtn = new Button("New Place");
+    newPlaceBtn = new Button("New Place");
     Button newConnBtn = new Button("New Connection");
     Button changeConnBtn = new Button("Change Connection");
     ToolBar toolBar = new ToolBar(findPathBtn, showConnBtn, newPlaceBtn, newConnBtn, changeConnBtn);
 
-    // Kartområde
+    // kartområde
     mapView = new ImageView();
     mapPane = new Pane(mapView);
     mapPane.setPrefSize(800, 600);
 
-    // Layout
+    // layout
     BorderPane root = new BorderPane();
     root.setTop(new VBox(menuBar, toolBar));
     root.setCenter(mapPane);
@@ -123,21 +127,21 @@ public class Gui extends Application {
     stage.setScene(scene);
     stage.show();
 
-    // Event handlers
+    // fil meny handlers
     exitItem.setOnAction(e -> handleExit());
     newMapItem.setOnAction(e -> handleNewMapItem());
     openItem.setOnAction(e -> handleOpenItem());
     saveItem.setOnAction(e -> handleSaveItem());
     saveImageItem.setOnAction(e -> handleSaveImageItem());
 
-    // verktygsknappar handlers
+    // toolbar handlers
     newPlaceBtn.setOnAction(e -> activateNewPlaceMode());
     newConnBtn.setOnAction(e -> handleNewConnection());
     showConnBtn.setOnAction(e -> handleShowConnection());
     changeConnBtn.setOnAction(e -> handleChangeConnection());
     findPathBtn.setOnAction(e -> handleFindPath());
 
-    // Hantera fönsterstängning
+    // hantera exit
     stage.setOnCloseRequest(e -> {
       e.consume();
       handleExit();
@@ -147,6 +151,9 @@ public class Gui extends Application {
   // new place
   private void activateNewPlaceMode() {
     mapPane.setCursor(Cursor.CROSSHAIR);
+
+    // inaktivera knappen
+    newPlaceBtn.setDisable(true);
 
     mapPane.setOnMouseClicked(evt -> {
       double x = evt.getX();
@@ -164,8 +171,13 @@ public class Gui extends Application {
         addVisualNode(name.trim(), x, y);
         markUnsavedChanges();
       });
+
+      // återställ muspekare
       mapPane.setCursor(Cursor.DEFAULT);
       mapPane.setOnMouseClicked(null);
+
+      // aktivera knappen igen
+      newPlaceBtn.setDisable(false);
     });
   }
 
@@ -187,22 +199,26 @@ public class Gui extends Application {
     }
   }
 
-  // connection
+  // new connection
   private void handleNewConnection() {
     if (selectedNodes.size() != 2) {
       showAlert("Error!", "Two places must be selected to create a new connection.");
       return;
     }
+
     PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
     if (graph.getEdgeBetween(a.getName(), b.getName()) != null) {
       showAlert("Error!", "A connection already exists between these places.");
       return;
     }
+
     Dialog<ButtonType> dialog = new Dialog<>();
     dialog.setTitle("New Connection");
     dialog.setHeaderText("Connection from " + a.getName() + " to " + b.getName());
+
     GridPane grid = new GridPane();
     TextField nameField = new TextField(), weightField = new TextField();
+
     grid.add(new Label("Name:"), 0, 0);
     grid.add(nameField, 1, 0);
     grid.add(new Label("Time:"), 0, 1);
@@ -226,9 +242,7 @@ public class Gui extends Application {
           if (name.isEmpty()) {
             showAlert("Error", "Name cannot be empty.");
             return;
-          }
-
-          if (timeText.isEmpty()) {
+          } else if (timeText.isEmpty()) {
             showAlert("Error", "Time cannot be empty.");
             return;
           }
@@ -267,7 +281,9 @@ public class Gui extends Application {
       Dialog<String> dialog = new Dialog<>();
       dialog.setTitle("Connection");
       dialog.setHeaderText("Connection from " + a.getName() + " to " + b.getName());
+
       GridPane grid = new GridPane();
+
       grid.setHgap(10);
       grid.setVgap(10);
       grid.setPadding(new Insets(20, 150, 10, 10));
@@ -400,52 +416,48 @@ public class Gui extends Application {
     }
 
     FileChooser fileChooser = new FileChooser();
-    fileChooser.setTitle("Välj en kartbild");
+    fileChooser.setTitle("Choose Map Image");
     fileChooser.getExtensionFilters().add(
-        new FileChooser.ExtensionFilter("Bildfiler", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
+        new FileChooser.ExtensionFilter("Image formats", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
     File file = fileChooser.showOpenDialog(primaryStage);
 
     if (file != null) {
       try {
-        // Rensa gamla noder/graf
+        // rensa gamla noder
         graph = new ListGraph<>();
 
-        // Ladda ny bild
         Image newImage = new Image(file.toURI().toString());
 
-        // Kontrollera att bilden laddades korrekt
         if (newImage.isError()) {
-          showAlert("Fel", "Kunde inte ladda bilden. Kontrollera att filen är en giltig bildfil.");
+          showAlert("Error!", "Could not load image. Please check the file format and try again.");
           return;
         }
 
-        // Sätt bilden
+        // sätt ny bild i mapView
         mapView.setImage(newImage);
         mapView.setPreserveRatio(true);
 
-        // Anpassa mapPane
+        // justera mapPane efter bilden
         mapPane.setMinSize(newImage.getWidth(), newImage.getHeight());
         mapPane.setPrefSize(newImage.getWidth(), newImage.getHeight());
 
-        // Rensa kartan och lägg till bilden
+        // cleara karta och lägg till ny bild från mapView
         mapPane.getChildren().clear();
         mapPane.getChildren().add(mapView);
 
-        // Anpassa fönsterstorlek
+        // anpassa fönsterstorlek efter bilden
         double menuHeight = 60;
         double windowWidth = Math.max(newImage.getWidth(), 400);
         double windowHeight = newImage.getHeight() + menuHeight;
         primaryStage.setWidth(windowWidth);
         primaryStage.setHeight(windowHeight);
 
-        // Spara sökväg och markera som sparat
+        // spara sökväg och markera som sparat
         currentMapImagePath = file.getAbsolutePath();
         hasUnsavedChanges = false;
 
-        System.out.println("Ny karta inläst: " + file.getName());
-
       } catch (Exception ex) {
-        showAlert("Fel", "Ett fel uppstod när bilden skulle laddas: " + ex.getMessage());
+        showAlert("Error!", "An error occurred while loading the image: " + ex.getMessage());
         ex.printStackTrace();
       }
     }
@@ -458,59 +470,58 @@ public class Gui extends Application {
     }
 
     FileChooser fileChooser = new FileChooser();
-    fileChooser.setTitle("Öppna graf-fil");
+    fileChooser.setTitle("Open Graph File");
     fileChooser.getExtensionFilters().add(
-        new FileChooser.ExtensionFilter("Graf-filer", "*.graph"));
+        new FileChooser.ExtensionFilter("Graph-files", "*.graph"));
     File file = fileChooser.showOpenDialog(primaryStage);
 
     if (file != null) {
       try {
-        // Rensa gamla noder/graf
+        // Rensa gamla noder och graf
         graph = new ListGraph<>();
+        selectedNodes.clear();
 
         try (java.util.Scanner scanner = new java.util.Scanner(file, "UTF-8")) {
-          // Läs första raden - sökväg till bildfil
+          // läs första raden som är sökvägen till bakgrundsbilden
           if (!scanner.hasNextLine()) {
-            throw new Exception("Tom fil eller fel format");
+            throw new Exception("No image path in file");
           }
 
           String imagePath = scanner.nextLine().trim();
 
-          // Hantera både URI-format (file:namn.gif) och vanliga filnamn (namn.gif)
+          // hantera "file:" prefix om det finns
           String actualImagePath = imagePath;
           if (imagePath.startsWith("file:")) {
-            actualImagePath = imagePath.substring(5); // Ta bort "file:" prefix
+            actualImagePath = imagePath.substring(5);
           }
 
-          // Hitta bildfilen
+          // kontrollera sökväg
           File imageFile = new File(actualImagePath);
           if (!imageFile.exists()) {
-            // Prova relativ sökväg från graf-filens katalog
+            // Try relative path from graph file's directory
             imageFile = new File(file.getParent(), actualImagePath);
             if (!imageFile.exists()) {
-              throw new Exception("Bildfilen hittades inte: " + actualImagePath);
+              throw new Exception("Image file not found: " + actualImagePath);
             }
           }
 
-          // Ladda bakgrundsbilden
+          // ladda in bilden
           Image newImage = new Image(imageFile.toURI().toString());
           if (newImage.isError()) {
-            throw new Exception("Kunde inte ladda bildfilen: " + imageFile.getName());
+            throw new Exception("Failed to load image file: " + imageFile.getName());
           }
 
-          // Sätt bilden
+          // justera mapView och mapPane efter den uppladdade bilden
           mapView.setImage(newImage);
           mapView.setPreserveRatio(true);
-
-          // Anpassa mapPane
           mapPane.setMinSize(newImage.getWidth(), newImage.getHeight());
           mapPane.setPrefSize(newImage.getWidth(), newImage.getHeight());
 
-          // Rensa kartan och lägg till bilden
+          // cleara gamla mapPane och lägg till ny bild
           mapPane.getChildren().clear();
           mapPane.getChildren().add(mapView);
 
-          // Anpassa fönsterstorlek
+          // // anpassa fönsterstorlek efter bilden
           double menuHeight = 60;
           double windowWidth = Math.max(newImage.getWidth(), 400);
           double windowHeight = newImage.getHeight() + menuHeight;
@@ -519,105 +530,135 @@ public class Gui extends Application {
 
           currentMapImagePath = imageFile.getAbsolutePath();
 
-          // Läs noder och edges
+          // läs andra raden från filen som innehåller noder
+          if (!scanner.hasNextLine()) {
+            throw new Exception("No nodes in file");
+          }
+
+          String nodesLine = scanner.nextLine().trim();
+          if (!nodesLine.isEmpty()) {
+            String[] nodeData = nodesLine.split(";");
+
+            // proccessar noder i tre (nodeName, x, y)
+            for (int i = 0; i < nodeData.length; i += 3) {
+              if (i + 2 < nodeData.length) {
+                String nodeName = nodeData[i];
+                double x = Double.parseDouble(nodeData[i + 1]);
+                double y = Double.parseDouble(nodeData[i + 2]);
+
+                graph.add(nodeName);
+
+                // rendera visuell nod
+                addVisualNode(nodeName, x, y);
+              }
+            }
+          }
+
+          // hantera edges
           while (scanner.hasNextLine()) {
             String line = scanner.nextLine().trim();
             if (line.isEmpty())
               continue;
 
-            if (line.startsWith("Node:")) {
-              // Format: Node: namn;x;y
-              String nodeData = line.substring(5).trim();
-              String[] parts = nodeData.split(";");
-              if (parts.length != 3) {
-                throw new Exception("Felaktigt nodformat: " + line);
-              }
+            String[] parts = line.split(";");
+            if (parts.length != 4) {
+              throw new Exception("Wrong Edge-format: " + line);
+            }
 
-              String nodeName = parts[0];
-              double x = Double.parseDouble(parts[1]);
-              double y = Double.parseDouble(parts[2]);
+            String from = parts[0];
+            String to = parts[1];
+            String name = parts[2];
+            int weight = Integer.parseInt(parts[3]);
 
-              // Lägg till nod i grafen
-              graph.add(nodeName);
-
-              // TODO: Skapa visuell representation av noden
-              // addVisualNode(nodeName, x, y);
-
-            } else if (line.startsWith("Edge:")) {
-              // Format: Edge: från;till;namn;vikt
-              String edgeData = line.substring(5).trim();
-              String[] parts = edgeData.split(";");
-              if (parts.length != 4) {
-                throw new Exception("Felaktigt edge-format: " + line);
-              }
-
-              String from = parts[0];
-              String to = parts[1];
-              String name = parts[2];
-              int weight = Integer.parseInt(parts[3]);
-
-              // Lägg till edge i grafen
+            // lägg till kanten i grafen
+            if (graph.getEdgeBetween(from, to) == null) {
               graph.connect(from, to, name, weight);
 
-              // TODO: Skapa visuell representation av edge
-              // addVisualEdge(from, to, name, weight);
+              // Create visual representation
+              PlaceNode fromNode = findPlaceNodeByName(from);
+              PlaceNode toNode = findPlaceNodeByName(to);
+              if (fromNode != null && toNode != null) {
+                drawEdge(fromNode, toNode);
+              }
             }
           }
         }
 
         hasUnsavedChanges = false;
-        System.out.println("Graf-fil öppnad: " + file.getName());
+        System.out.println("Graph-file opened: " + file.getName());
 
       } catch (Exception ex) {
-        showAlert("Fel", "Kunde inte öppna graf-filen: " + ex.getMessage());
+        showAlert("Error!", "Failed to load graph file: " + ex.getMessage());
         ex.printStackTrace();
       }
     }
   }
 
+  // hjälpmetod för att hitta en PlaceNode baserat på dess namn
+  private PlaceNode findPlaceNodeByName(String name) {
+    for (Node child : mapPane.getChildren()) {
+      if (child instanceof PlaceNode) {
+        PlaceNode placeNode = (PlaceNode) child;
+        if (placeNode.getName().equals(name)) {
+          return placeNode;
+        }
+      }
+    }
+    return null;
+  }
+
   private void handleSaveItem() {
-    // Kontrollera att det finns en karta att spara
+
     if (currentMapImagePath == null) {
-      showAlert("Fel", "Ingen karta att spara. Ladda först en karta med 'New Map' eller 'Open'.");
+      showAlert("Error!", "Cannot save - no map is currently loaded. Use 'New Map' or 'Open' to load a map first.");
       return;
     }
 
     FileChooser fileChooser = new FileChooser();
     fileChooser.getExtensionFilters().add(
-        new FileChooser.ExtensionFilter("Graf-filer", "*.graph"));
+        new FileChooser.ExtensionFilter("Graph-files", "*.graph"));
     File file = fileChooser.showSaveDialog(primaryStage);
 
     if (file != null) {
       try {
-        // Se till att filen har rätt ändelse
+        // kolla om filnamnet slutar med .graph, annars lägg till det
         String fileName = file.getAbsolutePath();
         if (!fileName.endsWith(".graph")) {
           file = new File(fileName + ".graph");
         }
 
         try (PrintWriter writer = new PrintWriter(new FileWriter(file, java.nio.charset.StandardCharsets.UTF_8))) {
-          // 1. Första raden: sökväg till bildfilen
+          // 1. första raden är sökvägen till bakgrundsbilden
           writer.println(currentMapImagePath);
 
-          // 2. Andra raden: alla noder (semikolonseparerade)
+          // 2. Andra raden innehåller alla noder i format (nodeName;x;y;nodeName;x;y;...)
           StringBuilder nodesLine = new StringBuilder();
           boolean firstNode = true;
+
+          // hämta kordinater för varje PlaceNode i mapPane
+          Map<String, PlaceNode> visualNodes = new HashMap<>();
+          for (Node child : mapPane.getChildren()) {
+            if (child instanceof PlaceNode) {
+              PlaceNode placeNode = (PlaceNode) child;
+              visualNodes.put(placeNode.getName(), placeNode);
+            }
+          }
+
           for (String nodeName : graph.getNodes()) {
             if (!firstNode) {
               nodesLine.append(";");
             }
 
-            // TODO: Hämta faktiska koordinater från visuella noder
-            // För nu används dummy-koordinater
-            double x = 0.0; // Ska hämtas från PlaceNode
-            double y = 0.0; // Ska hämtas från PlaceNode
+            PlaceNode visualNode = visualNodes.get(nodeName);
+            double x = visualNode != null ? visualNode.getCenterX() : 0.0;
+            double y = visualNode != null ? visualNode.getCenterY() : 0.0;
 
             nodesLine.append(nodeName).append(";").append(x).append(";").append(y);
             firstNode = false;
           }
           writer.println(nodesLine.toString());
 
-          // 3. Resterande rader: alla förbindelser (en per rad)
+          // 3. sist, alla kanter i format (fromNode;toNode;edgeName;weight)
           for (String fromNode : graph.getNodes()) {
             for (Edge<String> edge : graph.getEdgesFrom(fromNode)) {
               String toNode = edge.getDestination();
@@ -630,10 +671,10 @@ public class Gui extends Application {
         }
 
         hasUnsavedChanges = false;
-        System.out.println("Graf sparad: " + file.getName());
+        System.out.println("Graph-file saved: " + file.getName());
 
       } catch (Exception ex) {
-        showAlert("Fel", "Kunde inte spara graf-filen: " + ex.getMessage());
+        showAlert("Error!", "Failed to load graph file: " + ex.getMessage());
         ex.printStackTrace();
       }
     }
@@ -641,20 +682,20 @@ public class Gui extends Application {
 
   private void handleSaveImageItem() {
     try {
-      // Ta en snapshot av mapPane (kartområdet)
+      // Ta en skärmdhump av mapPane (kartan)
       WritableImage writableImage = mapPane.snapshot(new SnapshotParameters(), null);
 
-      // Konvertera till BufferedImage
+      // konvertera till BufferedImage
       BufferedImage bufferedImage = SwingFXUtils.fromFXImage(writableImage, null);
 
-      // Spara som PNG i projektmappen
+      // spara som PNG i topmappen (projektet)
       File outputFile = new File("capture.png");
       ImageIO.write(bufferedImage, "png", outputFile);
 
-      System.out.println("Skärmbild sparad som: " + outputFile.getAbsolutePath());
+      System.out.println("Screenshot saved as: " + outputFile.getAbsolutePath());
 
     } catch (Exception ex) {
-      showAlert("Fel", "Kunde inte spara skärmbilden: " + ex.getMessage());
+      showAlert("Error!", "Failed to save screenshot: " + ex.getMessage());
       ex.printStackTrace();
     }
   }
