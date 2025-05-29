@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-class PlaceNode extends StackPane {
+class PlaceNode extends Pane {
   private final String name;
   private final Circle circle;
   private final Label label;
@@ -42,10 +42,14 @@ class PlaceNode extends StackPane {
     this.name = name;
     this.circle = new Circle(8, Color.LIGHTBLUE);
     this.circle.setStroke(Color.BLACK);
+    this.circle.setCenterX(0);
+    this.circle.setCenterY(0);
     this.label = new Label(name);
+    this.label.setLayoutX((-label.prefWidth(-1) / 2) + 10);
+    this.label.setLayoutY(circle.getRadius());
     getChildren().addAll(circle, label);
-    setLayoutX(x - circle.getRadius());
-    setLayoutY(y - circle.getRadius());
+    setLayoutX(x);
+    setLayoutY(y);
     setOnMouseClicked(this::handleClick);
   }
 
@@ -69,11 +73,11 @@ class PlaceNode extends StackPane {
   }
 
   public double getCenterX() {
-    return getLayoutX() + circle.getRadius();
+    return getLayoutX();
   }
 
   public double getCenterY() {
-    return getLayoutY() + circle.getRadius();
+    return getLayoutY();
   }
 
 }
