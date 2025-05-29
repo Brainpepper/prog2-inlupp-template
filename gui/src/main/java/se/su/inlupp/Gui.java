@@ -17,6 +17,8 @@ import java.util.Optional;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.image.WritableImage;
 import javafx.embed.swing.SwingFXUtils;
+import javafx.geometry.Insets;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 
@@ -100,14 +102,6 @@ public class Gui extends Application {
     fileMenu.getItems().addAll(newMapItem, openItem, saveItem, saveImageItem, new SeparatorMenuItem(), exitItem);
     menuBar.getMenus().add(fileMenu);
 
-    // Knapprad
-    // ToolBar toolBar = new ToolBar(
-    // new Button("Find Path"),
-    // new Button("Show Connection"),
-    // new Button("New Place"),
-    // new Button("New Connection"),
-    // new Button("Change Connection"));
-
     Button findPathBtn = new Button("Find Path");
     Button showConnBtn = new Button("Show Connection");
     Button newPlaceBtn = new Button("New Place");
@@ -153,15 +147,20 @@ public class Gui extends Application {
   // new place
   private void activateNewPlaceMode() {
     mapPane.setCursor(Cursor.CROSSHAIR);
+
     mapPane.setOnMouseClicked(evt -> {
       double x = evt.getX();
       double y = evt.getY();
       TextInputDialog dialog = new TextInputDialog();
       dialog.setTitle("New Place");
       dialog.setHeaderText(null);
-      dialog.setContentText("Ange namn på plats:");
+      dialog.setContentText("Name of place:");
       Optional<String> result = dialog.showAndWait();
       result.ifPresent(name -> {
+        if (name.trim().isEmpty()) {
+          showAlert("Error", "Name cannot be empty.");
+          return;
+        }
         addVisualNode(name.trim(), x, y);
         markUnsavedChanges();
       });
@@ -180,8 +179,8 @@ public class Gui extends Application {
     if (node.isSelected()) {
       selectedNodes.add(node);
       if (selectedNodes.size() > 2) {
-        PlaceNode old = selectedNodes.remove(0);
-        old.toggleSelected();
+        PlaceNode last = selectedNodes.removeLast();
+        last.toggleSelected();
       }
     } else {
       selectedNodes.remove(node);
@@ -191,38 +190,58 @@ public class Gui extends Application {
   // connection
   private void handleNewConnection() {
     if (selectedNodes.size() != 2) {
-      showAlert("Fel", "Välj exakt två platser för att skapa en förbindelse.");
+      showAlert("Error!", "Two places must be selected to create a new connection.");
       return;
     }
     PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
     if (graph.getEdgeBetween(a.getName(), b.getName()) != null) {
-      showAlert("Fel", "En förbindelse finns redan.");
+      showAlert("Error!", "A connection already exists between these places.");
       return;
     }
-    Dialog<Pair<String, Integer>> dialog = new Dialog<>();
+    Dialog<ButtonType> dialog = new Dialog<>();
     dialog.setTitle("New Connection");
+    dialog.setHeaderText("Connection from " + a.getName() + " to " + b.getName());
     GridPane grid = new GridPane();
     TextField nameField = new TextField(), weightField = new TextField();
-    grid.add(new Label("Namn:"), 0, 0);
+    grid.add(new Label("Name:"), 0, 0);
     grid.add(nameField, 1, 0);
-    grid.add(new Label("Vikt:"), 0, 1);
+    grid.add(new Label("Time:"), 0, 1);
     grid.add(weightField, 1, 1);
+
+    grid.setHgap(10);
+    grid.setVgap(10);
+    grid.setPadding(new Insets(20, 150, 10, 10));
+
     dialog.getDialogPane().setContent(grid);
-    dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-    dialog.setResultConverter(btn -> {
-      if (btn == ButtonType.OK) {
+    ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+    ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+    dialog.getDialogPane().getButtonTypes().addAll(okButtonType, cancelButtonType);
+
+    dialog.showAndWait().ifPresent(action -> {
+      if (action == okButtonType) {
         try {
-          return new Pair<>(nameField.getText(), Integer.parseInt(weightField.getText()));
-        } catch (Exception ex) {
-          return null;
+          String name = nameField.getText().trim();
+          String timeText = weightField.getText().trim();
+
+          if (name.isEmpty()) {
+            showAlert("Error", "Name cannot be empty.");
+            return;
+          }
+
+          if (timeText.isEmpty()) {
+            showAlert("Error", "Time cannot be empty.");
+            return;
+          }
+
+          int time = Integer.parseInt(timeText);
+          graph.connect(a.getName(), b.getName(), name, time);
+          drawEdge(a, b);
+          showAlert("Success", "Connection created successfully.");
+          markUnsavedChanges();
+        } catch (NumberFormatException ex) {
+          showAlert("Error", "Invalid time value.");
         }
       }
-      return null;
-    });
-    dialog.showAndWait().ifPresent(p -> {
-      graph.connect(a.getName(), b.getName(), p.getKey(), p.getValue());
-      drawEdge(a, b);
-      markUnsavedChanges();
     });
   }
 
@@ -235,66 +254,143 @@ public class Gui extends Application {
   // Show connection
   private void handleShowConnection() {
     if (selectedNodes.size() != 2) {
-      showAlert("Fel", "Välj exakt två platser för att visa förbindelse.");
+      showAlert("Error", "Two places must be selected to show a connection.");
       return;
     }
+
     PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
     Edge<String> edge = graph.getEdgeBetween(a.getName(), b.getName());
-    if (edge == null)
-      showAlert("Fel", "Ingen förbindelse finns.");
-    else
-      showAlert("Connection", edge.getName() + ", vikt=" + edge.getWeight());
+
+    if (edge == null) {
+      showAlert("Error", "No connection exists between " + a.getName() + " and " + b.getName());
+    } else {
+      Dialog<String> dialog = new Dialog<>();
+      dialog.setTitle("Connection");
+      dialog.setHeaderText("Connection from " + a.getName() + " to " + b.getName());
+      GridPane grid = new GridPane();
+      grid.setHgap(10);
+      grid.setVgap(10);
+      grid.setPadding(new Insets(20, 150, 10, 10));
+
+      Label nameLabel = new Label("Name:");
+      TextField nameField = new TextField(edge.getName());
+      nameField.setEditable(false);
+
+      Label timeLabel = new Label("Time:");
+      TextField timeField = new TextField(String.valueOf(edge.getWeight()));
+      timeField.setEditable(false);
+
+      grid.add(nameLabel, 0, 0);
+      grid.add(nameField, 1, 0);
+      grid.add(timeLabel, 0, 1);
+      grid.add(timeField, 1, 1);
+
+      dialog.getDialogPane().setContent(grid);
+
+      ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+      ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+      dialog.getDialogPane().getButtonTypes().addAll(okButtonType, cancelButtonType);
+
+      dialog.showAndWait();
+    }
+
   }
 
   // change connection
   private void handleChangeConnection() {
     if (selectedNodes.size() != 2) {
-      showAlert("Fel", "Välj exakt två platser för att ändra förbindelse.");
+      showAlert("Error!", "Two places must be selected to change a connection.");
       return;
     }
+
     PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
     Edge<String> edge = graph.getEdgeBetween(a.getName(), b.getName());
+
     if (edge == null) {
-      showAlert("Fel", "Ingen förbindelse finns.");
+      showAlert("Error!", "No connection exists between " + a.getName() + " and " + b.getName());
       return;
+    } else {
+      Dialog<ButtonType> dialog = new Dialog<>();
+      dialog.setTitle("Change Connection");
+      dialog.setHeaderText("Connection from " + a.getName() + " to " + b.getName());
+      GridPane grid = new GridPane();
+      grid.setHgap(10);
+      grid.setVgap(10);
+      grid.setPadding(new Insets(20, 150, 10, 10));
+
+      Label nameLabel = new Label("Name:");
+      TextField nameField = new TextField(edge.getName());
+      nameField.setEditable(false);
+
+      Label timeLabel = new Label("Time:");
+      TextField timeField = new TextField(String.valueOf(edge.getWeight()));
+      timeField.setEditable(true);
+
+      grid.add(nameLabel, 0, 0);
+      grid.add(nameField, 1, 0);
+      grid.add(timeLabel, 0, 1);
+      grid.add(timeField, 1, 1);
+
+      dialog.getDialogPane().setContent(grid);
+
+      ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+      ButtonType cancelButtonType = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+      dialog.getDialogPane().getButtonTypes().addAll(okButtonType, cancelButtonType);
+
+      dialog.showAndWait().ifPresent(action -> {
+        if (action == okButtonType) {
+          try {
+            int newWeight = Integer.parseInt(timeField.getText());
+            graph.setConnectionWeight(a.getName(), b.getName(), newWeight);
+            showAlert("Success", "Connection time updated to " + newWeight);
+            markUnsavedChanges();
+          } catch (NumberFormatException ex) {
+            showAlert("Error", "Invalid time value.");
+          }
+        }
+      });
     }
-    TextInputDialog dialog = new TextInputDialog(String.valueOf(edge.getWeight()));
-    dialog.setTitle("Change Connection");
-    dialog.setHeaderText(null);
-    dialog.setContentText("Ny vikt:");
-    dialog.showAndWait().ifPresent(val -> {
-      try {
-        int newW = Integer.parseInt(val);
-        graph.setConnectionWeight(a.getName(), b.getName(), newW);
-        showAlert("Success", "Vikten uppdaterad till " + newW);
-        markUnsavedChanges();
-      } catch (NumberFormatException ex) {
-        showAlert("Fel", "Ogiltigt viktvärde.");
-      }
-    });
   }
 
   // Find path
   private void handleFindPath() {
     if (selectedNodes.size() != 2) {
-      showAlert("Fel", "Välj exakt två platser för att hitta väg.");
+      showAlert("Error!", "Two places must be selected to find a path.");
       return;
     }
     PlaceNode a = selectedNodes.get(0), b = selectedNodes.get(1);
     if (!graph.pathExists(a.getName(), b.getName())) {
-      showAlert("Fel", "Ingen väg finns.");
+      showAlert("Error!", "No path exists between " + a.getName() + " and " + b.getName());
       return;
     }
     List<Edge<String>> path = graph.getPath(a.getName(), b.getName());
+
+    Dialog<ButtonType> dialog = new Dialog<>();
+    dialog.setTitle("Message");
+    dialog.setHeaderText("The Path from " + a.getName() + " to " + b.getName() + ":");
+
+    TextArea pathArea = new TextArea();
+    pathArea.setEditable(false);
+    pathArea.setPrefRowCount(8);
+    pathArea.setPrefColumnCount(50);
+
     StringBuilder sb = new StringBuilder();
     int total = 0;
     for (Edge<String> e : path) {
-      sb.append("Till ").append(e.getDestination()).append(" via ")
-          .append(e.getName()).append(" vikt ").append(e.getWeight()).append("\n");
+      sb.append("to ").append(e.getDestination()).append(" by ")
+          .append(e.getName()).append(" takes ").append(e.getWeight()).append("\n");
       total += e.getWeight();
     }
-    sb.append("Total vikt: ").append(total);
-    showAlert("Path", sb.toString());
+    sb.append("Total ").append(total);
+
+    pathArea.setText(sb.toString());
+
+    dialog.getDialogPane().setContent(pathArea);
+
+    ButtonType okButtonType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+    dialog.getDialogPane().getButtonTypes().add(okButtonType);
+
+    dialog.showAndWait();
   }
 
   private void handleNewMapItem() {
